@@ -1,0 +1,22 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    queries: "internal/infrastructure/persistence/postgres/queries"
+    schema: "internal/infrastructure/persistence/postgres/migrations"
+    gen:
+      go:
+        package: "db"
+        out: "internal/infrastructure/persistence/postgres/db"
+        sql_package: "pgx/v5"
+        emit_json_tags: true
+        emit_empty_slices: true
+        emit_interface: true
+        overrides:
+          - column: "withdrawals.amount"
+            go_type: "string"
+          - column: "withdrawals.status"
+            go_type: "string"
+          - column: "idempotency_keys.withdrawal_id"
+            nullable: true
+          - column: "processing_locks.locked_by"
+            nullable: true

@@ -1,0 +1,146 @@
+syntax = "proto3";
+
+package withdrawal.v1;
+
+// buf immediately resolves go_package to the correct import path based on the module name in go.mod, so we don't need to specify it here.
+
+import "google/protobuf/timestamp.proto";
+
+// WithdrawalStatus represents the current state of a withdrawal request
+enum WithdrawalStatus {
+  WITHDRAWAL_STATUS_UNSPECIFIED = 0;
+  WITHDRAWAL_STATUS_PENDING     = 1;
+  WITHDRAWAL_STATUS_PROCESSING  = 2;
+  WITHDRAWAL_STATUS_COMPLETED   = 3;
+  WITHDRAWAL_STATUS_FAILED      = 4;
+  WITHDRAWAL_STATUS_RETRYING    = 5;
+}
+
+// Withdrawal represents a withdrawal transaction
+message Withdrawal {
+  string                    id                  = 1;
+  string                    idempotency_key     = 2;
+  string                    user_id             = 3;
+  string                    asset               = 4;
+  string                    amount              = 5;
+  string                    destination_address = 6;
+  string                    network             = 7;
+  WithdrawalStatus          status              = 8;
+  int32                     retry_count         = 9;
+  int32                     max_retries         = 10;
+  string                    error_message       = 11;
+  string                    tx_hash             = 12;
+  google.protobuf.Timestamp created_at          = 13;
+  google.protobuf.Timestamp updated_at          = 14;
+  google.protobuf.Timestamp processed_at        = 15;
+}
+
+// CreateWithdrawalRequest is the request message for creating a new withdrawal
+message CreateWithdrawalRequest {
+  string idempotency_key     = 1;
+  string user_id             = 2;
+  string asset               = 3;
+  string amount              = 4;
+  string destination_address = 5;
+  string network             = 6;
+  int32  max_retries         = 7;
+}
+
+// CreateWithdrawalResponse is the response message for creating a new withdrawal
+message CreateWithdrawalResponse {
+  Withdrawal withdrawal     = 1;
+  bool       already_exists = 2;
+}
+
+// GetWithdrawalRequest is the request message for retrieving a withdrawal by ID
+message GetWithdrawalRequest {
+  string id = 1;
+}
+
+// GetWithdrawalResponse is the response message for retrieving a withdrawal by ID
+message GetWithdrawalResponse {
+  Withdrawal withdrawal = 1;
+}
+
+// GetWithdrawalByIdempotencyKeyRequest is the request message for retrieving a withdrawal by idempotency key
+message GetWithdrawalByIdempotencyKeyRequest {
+  string idempotency_key = 1;
+}
+
+// GetWithdrawalByIdempotencyKeyResponse is the response message for retrieving a withdrawal by idempotency key
+message GetWithdrawalByIdempotencyKeyResponse {
+  Withdrawal withdrawal = 1;
+  bool       found      = 2;
+}
+
+// ListWithdrawalsRequest is the request message for listing withdrawals with pagination and filtering
+message ListWithdrawalsRequest {
+  string           user_id    = 1;
+  WithdrawalStatus status     = 2;
+  int32            page_size  = 3;
+  string           page_token = 4;
+}
+
+// ListWithdrawalsResponse is the response message for listing withdrawals with pagination and filtering
+message ListWithdrawalsResponse {
+  repeated Withdrawal withdrawals     = 1;
+  string              next_page_token = 2;
+}
+
+// RetryWithdrawalRequest is the request message for retrying a failed withdrawal
+message RetryWithdrawalRequest {
+  string id = 1;
+}
+
+// RetryWithdrawalResponse is the response message for retrying a failed withdrawal
+message RetryWithdrawalResponse {
+  Withdrawal withdrawal = 1;
+}
+
+// WithdrawalService handles withdrawal operations
+service WithdrawalService {
+  // CreateWithdrawal creates a new withdrawal or returns the existing one for the same idempotency key.
+  rpc CreateWithdrawal(CreateWithdrawalRequest) returns (CreateWithdrawalResponse);
+  // GetWithdrawal retrieves a withdrawal by its unique withdrawal ID.
+  rpc GetWithdrawal(GetWithdrawalRequest) returns (GetWithdrawalResponse);
+  // GetWithdrawalByIdempotencyKey retrieves a withdrawal by its idempotency key.
+  rpc GetWithdrawalByIdempotencyKey(GetWithdrawalByIdempotencyKeyRequest) returns (GetWithdrawalByIdempotencyKeyResponse);
+  // ListWithdrawals lists withdrawals with optional filtering and pagination.
+  rpc ListWithdrawals(ListWithdrawalsRequest) returns (ListWithdrawalsResponse);
+  // RetryWithdrawal retries a failed withdrawal by resetting it for processing.
+  rpc RetryWithdrawal(RetryWithdrawalRequest) returns (RetryWithdrawalResponse);
+}
+
+// WithdrawalProcessorService manages the withdrawal processor
+service WithdrawalProcessorService {
+  // StartProcessor starts the background withdrawal processor.
+  rpc StartProcessor(StartProcessorRequest) returns (StartProcessorResponse);
+  // StopProcessor stops the background withdrawal processor.
+  rpc StopProcessor(StopProcessorRequest) returns (StopProcessorResponse);
+  // GetProcessorStats returns runtime statistics for the withdrawal processor.
+  rpc GetProcessorStats(GetProcessorStatsRequest) returns (GetProcessorStatsResponse);
+}
+
+// StartProcessorRequest is the request message for starting the processor.
+message StartProcessorRequest {}
+
+// StartProcessorResponse is the response message for starting the processor.
+message StartProcessorResponse {}
+
+// StopProcessorRequest is the request message for stopping the processor.
+message StopProcessorRequest {}
+
+// StopProcessorResponse is the response message for stopping the processor.
+message StopProcessorResponse {}
+
+// GetProcessorStatsRequest is the request message for retrieving processor statistics.
+message GetProcessorStatsRequest {}
+
+// GetProcessorStatsResponse is the response message for retrieving withdrawal processor statistics.
+message GetProcessorStatsResponse {
+  int64 total_processed    = 1;
+  int64 total_succeeded    = 2;
+  int64 total_failed       = 3;
+  int64 total_retries      = 4;
+  int64 current_queue_size = 5;
+}
