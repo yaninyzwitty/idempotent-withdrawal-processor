@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"time"
 
 	withdrawalv1 "github.com/yaninyzwitty/idempotent-widthrawal-processor/gen/withdrawal/v1"
 	"github.com/yaninyzwitty/idempotent-widthrawal-processor/internal/app/config"
@@ -162,7 +163,7 @@ func NewWithdrawalProcessor(
 		infraServices.WithProcessorID(cfg.Processor.ID),
 		infraServices.WithBatchSize(cfg.Processor.BatchSize),
 		infraServices.WithPollInterval(cfg.Processor.PollInterval),
-		infraServices.WithLockTTL(int64(cfg.Processor.LockTTL.Seconds())),
+		infraServices.WithLockTTL(int64(cfg.Processor.LockTTL/time.Second)),
 		infraServices.WithMaxConcurrent(cfg.Processor.MaxConcurrent),
 		infraServices.WithRetryBaseDelay(cfg.Processor.RetryBaseDelay),
 		infraServices.WithRetryMaxDelay(cfg.Processor.RetryMaxDelay),
