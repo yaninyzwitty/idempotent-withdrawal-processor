@@ -74,7 +74,7 @@ func NewLogger(cfg *config.Config) (*zap.Logger, error) {
 }
 
 func NewConfig() *config.Config {
-	return config.LoadFromEnv()
+	return config.MustLoad()
 }
 
 func NewPostgresPool(lc fx.Lifecycle, cfg *config.Config, logger *zap.Logger) (*postgres.Pool, error) {

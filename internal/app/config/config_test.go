@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -61,53 +62,65 @@ func TestConfigOptions(t *testing.T) {
 	}
 }
 
-func TestLoadFromEnv(t *testing.T) {
-	originalValues := map[string]string{
-		"GRPC_PORT":                os.Getenv("GRPC_PORT"),
-		"KAFKA_BROKERS":            os.Getenv("KAFKA_BROKERS"),
-		"KAFKA_TOPIC":              os.Getenv("KAFKA_TOPIC"),
-		"KAFKA_CONSUMER_GROUP":     os.Getenv("KAFKA_CONSUMER_GROUP"),
-		"PROCESSOR_ID":             os.Getenv("PROCESSOR_ID"),
-		"PROCESSOR_BATCH_SIZE":     os.Getenv("PROCESSOR_BATCH_SIZE"),
-		"PROCESSOR_MAX_CONCURRENT": os.Getenv("PROCESSOR_MAX_CONCURRENT"),
-		"LOG_LEVEL":                os.Getenv("LOG_LEVEL"),
+func TestLoadFromYAML(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `
+grpc:
+  port: 9000
+  network: tcp
+
+kafka:
+  topic: test-topic
+  consumer_group: test-group
+  min_bytes: 100
+  max_bytes: 5000000
+  max_wait: 200ms
+
+processor:
+  id: test-processor
+  batch_size: 50
+  poll_interval: 50ms
+  lock_ttl: 600
+  max_concurrent: 20
+  retry_base_delay: 2s
+  retry_max_delay: 60s
+
+idempotency:
+  key_ttl: 48h
+
+logging:
+  level: debug
+  format: console
+
+postgres:
+  host: testhost
+  port: 5433
+  user: testuser
+  database: testdb
+  ssl_mode: require
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config file: %v", err)
 	}
 
-	defer func() {
-		for key, value := range originalValues {
-			if value == "" {
-				os.Unsetenv(key)
-			} else {
-				os.Setenv(key, value)
-			}
-		}
-	}()
-
-	os.Setenv("GRPC_PORT", "9000")
-	os.Setenv("KAFKA_BROKERS", "kafka:9092")
-	os.Setenv("KAFKA_TOPIC", "env-topic")
-	os.Setenv("KAFKA_CONSUMER_GROUP", "env-group")
-	os.Setenv("PROCESSOR_ID", "env-processor")
-	os.Setenv("PROCESSOR_BATCH_SIZE", "50")
-	os.Setenv("PROCESSOR_MAX_CONCURRENT", "20")
-	os.Setenv("LOG_LEVEL", "warn")
-
-	cfg := LoadFromEnv()
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
 
 	if cfg.GRPC.Port != 9000 {
 		t.Errorf("GRPC.Port = %v, want 9000", cfg.GRPC.Port)
 	}
-	if len(cfg.Kafka.Brokers) != 1 || cfg.Kafka.Brokers[0] != "kafka:9092" {
-		t.Errorf("Kafka.Brokers = %v, want [kafka:9092]", cfg.Kafka.Brokers)
+	if cfg.Kafka.Topic != "test-topic" {
+		t.Errorf("Kafka.Topic = %v, want 'test-topic'", cfg.Kafka.Topic)
 	}
-	if cfg.Kafka.Topic != "env-topic" {
-		t.Errorf("Kafka.Topic = %v, want 'env-topic'", cfg.Kafka.Topic)
+	if cfg.Kafka.ConsumerGroup != "test-group" {
+		t.Errorf("Kafka.ConsumerGroup = %v, want 'test-group'", cfg.Kafka.ConsumerGroup)
 	}
-	if cfg.Kafka.ConsumerGroup != "env-group" {
-		t.Errorf("Kafka.ConsumerGroup = %v, want 'env-group'", cfg.Kafka.ConsumerGroup)
-	}
-	if cfg.Processor.ID != "env-processor" {
-		t.Errorf("Processor.ID = %v, want 'env-processor'", cfg.Processor.ID)
+	if cfg.Processor.ID != "test-processor" {
+		t.Errorf("Processor.ID = %v, want 'test-processor'", cfg.Processor.ID)
 	}
 	if cfg.Processor.BatchSize != 50 {
 		t.Errorf("Processor.BatchSize = %v, want 50", cfg.Processor.BatchSize)
@@ -115,48 +128,119 @@ func TestLoadFromEnv(t *testing.T) {
 	if cfg.Processor.MaxConcurrent != 20 {
 		t.Errorf("Processor.MaxConcurrent = %v, want 20", cfg.Processor.MaxConcurrent)
 	}
-	if cfg.Logging.Level != "warn" {
-		t.Errorf("Logging.Level = %v, want 'warn'", cfg.Logging.Level)
+	if cfg.Logging.Level != "debug" {
+		t.Errorf("Logging.Level = %v, want 'debug'", cfg.Logging.Level)
+	}
+	if cfg.Postgres.Host != "testhost" {
+		t.Errorf("Postgres.Host = %v, want 'testhost'", cfg.Postgres.Host)
+	}
+	if cfg.Postgres.Port != 5433 {
+		t.Errorf("Postgres.Port = %v, want 5433", cfg.Postgres.Port)
+	}
+	if cfg.Idempotency.KeyTTL != 48*time.Hour {
+		t.Errorf("Idempotency.KeyTTL = %v, want 48h", cfg.Idempotency.KeyTTL)
 	}
 }
 
-func TestLoadFromEnv_InvalidValues(t *testing.T) {
-	originalPort := os.Getenv("GRPC_PORT")
-	originalBatchSize := os.Getenv("PROCESSOR_BATCH_SIZE")
-	originalMaxConcurrent := os.Getenv("PROCESSOR_MAX_CONCURRENT")
+func TestLoadSecretsFromEnv(t *testing.T) {
+	originalPassword := os.Getenv("POSTGRES_PASSWORD")
+	originalBrokers := os.Getenv("KAFKA_BROKERS")
+	originalURL := os.Getenv("POSTGRES_URL")
 
 	defer func() {
-		if originalPort == "" {
-			os.Unsetenv("GRPC_PORT")
+		if originalPassword == "" {
+			os.Unsetenv("POSTGRES_PASSWORD")
 		} else {
-			os.Setenv("GRPC_PORT", originalPort)
+			os.Setenv("POSTGRES_PASSWORD", originalPassword)
 		}
-		if originalBatchSize == "" {
-			os.Unsetenv("PROCESSOR_BATCH_SIZE")
+		if originalBrokers == "" {
+			os.Unsetenv("KAFKA_BROKERS")
 		} else {
-			os.Setenv("PROCESSOR_BATCH_SIZE", originalBatchSize)
+			os.Setenv("KAFKA_BROKERS", originalBrokers)
 		}
-		if originalMaxConcurrent == "" {
-			os.Unsetenv("PROCESSOR_MAX_CONCURRENT")
+		if originalURL == "" {
+			os.Unsetenv("POSTGRES_URL")
 		} else {
-			os.Setenv("PROCESSOR_MAX_CONCURRENT", originalMaxConcurrent)
+			os.Setenv("POSTGRES_URL", originalURL)
 		}
 	}()
 
-	os.Setenv("GRPC_PORT", "invalid")
-	os.Setenv("PROCESSOR_BATCH_SIZE", "invalid")
-	os.Setenv("PROCESSOR_MAX_CONCURRENT", "invalid")
+	os.Setenv("POSTGRES_PASSWORD", "secret-password")
+	os.Setenv("KAFKA_BROKERS", "broker1:9092,broker2:9092")
+	os.Setenv("POSTGRES_URL", "postgres://user:pass@host:5432/db")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.Postgres.Password != "secret-password" {
+		t.Errorf("Postgres.Password = %v, want 'secret-password'", cfg.Postgres.Password)
+	}
+	if len(cfg.Kafka.Brokers) != 2 {
+		t.Errorf("Kafka.Brokers count = %v, want 2", len(cfg.Kafka.Brokers))
+	}
+	if cfg.Kafka.Brokers[0] != "broker1:9092" || cfg.Kafka.Brokers[1] != "broker2:9092" {
+		t.Errorf("Kafka.Brokers = %v, want [broker1:9092, broker2:9092]", cfg.Kafka.Brokers)
+	}
+	if cfg.Postgres.URL != "postgres://user:pass@host:5432/db" {
+		t.Errorf("Postgres.URL = %v, want 'postgres://user:pass@host:5432/db'", cfg.Postgres.URL)
+	}
+}
+
+func TestLoadFromEnv(t *testing.T) {
+	originalPassword := os.Getenv("POSTGRES_PASSWORD")
+	originalBrokers := os.Getenv("KAFKA_BROKERS")
+
+	defer func() {
+		if originalPassword == "" {
+			os.Unsetenv("POSTGRES_PASSWORD")
+		} else {
+			os.Setenv("POSTGRES_PASSWORD", originalPassword)
+		}
+		if originalBrokers == "" {
+			os.Unsetenv("KAFKA_BROKERS")
+		} else {
+			os.Setenv("KAFKA_BROKERS", originalBrokers)
+		}
+	}()
+
+	os.Setenv("POSTGRES_PASSWORD", "env-password")
+	os.Setenv("KAFKA_BROKERS", "env-broker:9092")
 
 	cfg := LoadFromEnv()
 
-	if cfg.GRPC.Port != 50051 {
-		t.Errorf("GRPC.Port = %v, want 50051 (default for invalid value)", cfg.GRPC.Port)
+	if cfg.Postgres.Password != "env-password" {
+		t.Errorf("Postgres.Password = %v, want 'env-password'", cfg.Postgres.Password)
 	}
-	if cfg.Processor.BatchSize != 100 {
-		t.Errorf("Processor.BatchSize = %v, want 100 (default for invalid value)", cfg.Processor.BatchSize)
+	if len(cfg.Kafka.Brokers) != 1 || cfg.Kafka.Brokers[0] != "env-broker:9092" {
+		t.Errorf("Kafka.Brokers = %v, want [env-broker:9092]", cfg.Kafka.Brokers)
 	}
-	if cfg.Processor.MaxConcurrent != 10 {
-		t.Errorf("Processor.MaxConcurrent = %v, want 10 (default for invalid value)", cfg.Processor.MaxConcurrent)
+}
+
+func TestSplitBrokers(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected []string
+	}{
+		{"localhost:9092", []string{"localhost:9092"}},
+		{"broker1:9092,broker2:9092", []string{"broker1:9092", "broker2:9092"}},
+		{"broker1:9092,broker2:9092,broker3:9092", []string{"broker1:9092", "broker2:9092", "broker3:9092"}},
+		{"", []string{}},
+		{",,", []string{}},
+	}
+
+	for _, tt := range tests {
+		result := splitBrokers(tt.input)
+		if len(result) != len(tt.expected) {
+			t.Errorf("splitBrokers(%q) = %v, want %v", tt.input, result, tt.expected)
+			continue
+		}
+		for i, v := range result {
+			if v != tt.expected[i] {
+				t.Errorf("splitBrokers(%q)[%d] = %v, want %v", tt.input, i, v, tt.expected[i])
+			}
+		}
 	}
 }
 
@@ -241,6 +325,50 @@ func TestValidate(t *testing.T) {
 			err := Validate(tt.config)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestPostgresConnectionString(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   *PostgresConfig
+		expected string
+	}{
+		{
+			name: "using URL",
+			config: &PostgresConfig{
+				URL:      "postgres://custom:pass@customhost:5433/customdb",
+				Host:     "localhost",
+				Port:     5432,
+				User:     "postgres",
+				Password: "postgres",
+				Database: "withdrawals",
+				SSLMode:  "disable",
+			},
+			expected: "postgres://custom:pass@customhost:5433/customdb",
+		},
+		{
+			name: "using individual fields",
+			config: &PostgresConfig{
+				URL:      "",
+				Host:     "localhost",
+				Port:     5432,
+				User:     "postgres",
+				Password: "secret",
+				Database: "withdrawals",
+				SSLMode:  "disable",
+			},
+			expected: "postgres://postgres:secret@localhost:5432/withdrawals?sslmode=disable",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.config.ConnectionString()
+			if result != tt.expected {
+				t.Errorf("ConnectionString() = %v, want %v", result, tt.expected)
 			}
 		})
 	}

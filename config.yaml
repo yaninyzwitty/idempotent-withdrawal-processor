@@ -1,0 +1,33 @@
+grpc:
+  port: 50051
+  network: tcp
+
+kafka:
+  topic: withdrawals
+  consumer_group: withdrawal-processor
+  min_bytes: 1
+  max_bytes: 10000000
+  max_wait: 100ms
+
+processor:
+  id: processor-1
+  batch_size: 100
+  poll_interval: 100ms
+  lock_ttl: 300
+  max_concurrent: 10
+  retry_base_delay: 1s
+  retry_max_delay: 30s
+
+idempotency:
+  key_ttl: 24h
+
+logging:
+  level: info
+  format: json
+
+postgres:
+  host: localhost
+  port: 5432
+  user: postgres
+  database: withdrawals
+  ssl_mode: disable

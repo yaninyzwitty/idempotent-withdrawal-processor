@@ -3,60 +3,61 @@ package config
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	GRPC        GRPCConfig
-	Kafka       KafkaConfig
-	Processor   ProcessorConfig
-	Idempotency IdempotencyConfig
-	Logging     LoggingConfig
-	Postgres    PostgresConfig
+	GRPC        GRPCConfig        `yaml:"grpc"`
+	Kafka       KafkaConfig       `yaml:"kafka"`
+	Processor   ProcessorConfig   `yaml:"processor"`
+	Idempotency IdempotencyConfig `yaml:"idempotency"`
+	Logging     LoggingConfig     `yaml:"logging"`
+	Postgres    PostgresConfig    `yaml:"postgres"`
 }
 
 type PostgresConfig struct {
-	URL      string
-	Host     string
-	Port     int
-	User     string
-	Password string
-	Database string
-	SSLMode  string
+	URL      string `yaml:"-"`
+	Host     string `yaml:"host"`
+	Port     int    `yaml:"port"`
+	User     string `yaml:"user"`
+	Password string `yaml:"-"`
+	Database string `yaml:"database"`
+	SSLMode  string `yaml:"ssl_mode"`
 }
 
 type GRPCConfig struct {
-	Port    int
-	Network string
+	Port    int    `yaml:"port"`
+	Network string `yaml:"network"`
 }
 
 type KafkaConfig struct {
-	Brokers       []string
-	Topic         string
-	ConsumerGroup string
-	MinBytes      int
-	MaxBytes      int
-	MaxWait       time.Duration
+	Brokers       []string      `yaml:"-"`
+	Topic         string        `yaml:"topic"`
+	ConsumerGroup string        `yaml:"consumer_group"`
+	MinBytes      int           `yaml:"min_bytes"`
+	MaxBytes      int           `yaml:"max_bytes"`
+	MaxWait       time.Duration `yaml:"max_wait"`
 }
 
 type ProcessorConfig struct {
-	ID             string
-	BatchSize      int
-	PollInterval   time.Duration
-	LockTTL        int64
-	MaxConcurrent  int
-	RetryBaseDelay time.Duration
-	RetryMaxDelay  time.Duration
+	ID             string        `yaml:"id"`
+	BatchSize      int           `yaml:"batch_size"`
+	PollInterval   time.Duration `yaml:"poll_interval"`
+	LockTTL        int64         `yaml:"lock_ttl"`
+	MaxConcurrent  int           `yaml:"max_concurrent"`
+	RetryBaseDelay time.Duration `yaml:"retry_base_delay"`
+	RetryMaxDelay  time.Duration `yaml:"retry_max_delay"`
 }
 
 type IdempotencyConfig struct {
-	KeyTTL time.Duration
+	KeyTTL time.Duration `yaml:"key_ttl"`
 }
 
 type LoggingConfig struct {
-	Level  string
-	Format string
+	Level  string `yaml:"level"`
+	Format string `yaml:"format"`
 }
 
 type ConfigOption func(*Config)
@@ -89,6 +90,67 @@ func WithLogLevel(level string) ConfigOption {
 	return func(c *Config) {
 		c.Logging.Level = level
 	}
+}
+
+func Load(configPath string) (*Config, error) {
+	cfg := DefaultConfig()
+
+	if configPath != "" {
+		data, err := os.ReadFile(configPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read config file: %w", err)
+		}
+
+		if err := yaml.Unmarshal(data, cfg); err != nil {
+			return nil, fmt.Errorf("failed to parse config file: %w", err)
+		}
+	}
+
+	loadSecretsFromEnv(cfg)
+
+	return cfg, nil
+}
+
+func loadSecretsFromEnv(cfg *Config) {
+	if url := os.Getenv("POSTGRES_URL"); url != "" {
+		cfg.Postgres.URL = url
+	}
+	if password := os.Getenv("POSTGRES_PASSWORD"); password != "" {
+		cfg.Postgres.Password = password
+	}
+	if brokers := os.Getenv("KAFKA_BROKERS"); brokers != "" {
+		cfg.Kafka.Brokers = splitBrokers(brokers)
+	}
+}
+
+func splitBrokers(brokers string) []string {
+	if brokers == "" {
+		return nil
+	}
+
+	// we count the comas to estimate the size of the slice and avoid unnecessary allocations
+	count := 1
+	for i := range brokers {
+		if brokers[i] == ',' {
+			count++
+		}
+	}
+
+	result := make([]string, 0, count)
+	start := 0
+	for i := 0; i < len(brokers); i++ {
+		if brokers[i] == ',' {
+			if i > start {
+				result = append(result, brokers[start:i])
+			}
+			start = i + 1
+		}
+	}
+	if start < len(brokers) {
+		result = append(result, brokers[start:])
+	}
+
+	return result
 }
 
 func DefaultConfig() *Config {
@@ -126,7 +188,7 @@ func DefaultConfig() *Config {
 			Host:     "localhost",
 			Port:     5432,
 			User:     "postgres",
-			Password: "postgres",
+			Password: "",
 			Database: "withdrawals",
 			SSLMode:  "disable",
 		},
@@ -134,70 +196,10 @@ func DefaultConfig() *Config {
 }
 
 func LoadFromEnv() *Config {
-	cfg := DefaultConfig()
-
-	if port := os.Getenv("GRPC_PORT"); port != "" {
-		if p, err := strconv.Atoi(port); err == nil {
-			cfg.GRPC.Port = p
-		}
+	cfg, err := Load("")
+	if err != nil {
+		return DefaultConfig()
 	}
-
-	if brokers := os.Getenv("KAFKA_BROKERS"); brokers != "" {
-		cfg.Kafka.Brokers = []string{brokers}
-	}
-
-	if topic := os.Getenv("KAFKA_TOPIC"); topic != "" {
-		cfg.Kafka.Topic = topic
-	}
-
-	if group := os.Getenv("KAFKA_CONSUMER_GROUP"); group != "" {
-		cfg.Kafka.ConsumerGroup = group
-	}
-
-	if procID := os.Getenv("PROCESSOR_ID"); procID != "" {
-		cfg.Processor.ID = procID
-	}
-
-	if batchSize := os.Getenv("PROCESSOR_BATCH_SIZE"); batchSize != "" {
-		if b, err := strconv.Atoi(batchSize); err == nil {
-			cfg.Processor.BatchSize = b
-		}
-	}
-
-	if maxConcurrent := os.Getenv("PROCESSOR_MAX_CONCURRENT"); maxConcurrent != "" {
-		if m, err := strconv.Atoi(maxConcurrent); err == nil {
-			cfg.Processor.MaxConcurrent = m
-		}
-	}
-
-	if logLevel := os.Getenv("LOG_LEVEL"); logLevel != "" {
-		cfg.Logging.Level = logLevel
-	}
-
-	if url := os.Getenv("POSTGRES_URL"); url != "" {
-		cfg.Postgres.URL = url
-	}
-	if host := os.Getenv("POSTGRES_HOST"); host != "" {
-		cfg.Postgres.Host = host
-	}
-	if port := os.Getenv("POSTGRES_PORT"); port != "" {
-		if p, err := strconv.Atoi(port); err == nil {
-			cfg.Postgres.Port = p
-		}
-	}
-	if user := os.Getenv("POSTGRES_USER"); user != "" {
-		cfg.Postgres.User = user
-	}
-	if password := os.Getenv("POSTGRES_PASSWORD"); password != "" {
-		cfg.Postgres.Password = password
-	}
-	if database := os.Getenv("POSTGRES_DATABASE"); database != "" {
-		cfg.Postgres.Database = database
-	}
-	if sslMode := os.Getenv("POSTGRES_SSL_MODE"); sslMode != "" {
-		cfg.Postgres.SSLMode = sslMode
-	}
-
 	return cfg
 }
 
@@ -226,4 +228,23 @@ func (c *PostgresConfig) ConnectionString() string {
 	}
 	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
 		c.User, c.Password, c.Host, c.Port, c.Database, c.SSLMode)
+}
+
+func GetConfigPath() string {
+	if path := os.Getenv("CONFIG_PATH"); path != "" {
+		return path
+	}
+	return "config.yaml"
+}
+
+func MustLoad() *Config {
+	configPath := GetConfigPath()
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		cfg = DefaultConfig()
+		loadSecretsFromEnv(cfg)
+	}
+
+	return cfg
 }
