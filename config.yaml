@@ -13,7 +13,7 @@ processor:
   id: processor-1
   batch_size: 100
   poll_interval: 100ms
-  lock_ttl: 300
+  lock_ttl: 300s
   max_concurrent: 10
   retry_base_delay: 1s
   retry_max_delay: 30s

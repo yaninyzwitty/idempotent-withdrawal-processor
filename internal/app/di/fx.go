@@ -74,7 +74,13 @@ func NewLogger(cfg *config.Config) (*zap.Logger, error) {
 }
 
 func NewConfig() *config.Config {
-	return config.MustLoad()
+	configPath := config.GetConfigPath()
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		panic(fmt.Sprintf("failed to load config: %v", err))
+	}
+	return cfg
 }
 
 func NewPostgresPool(lc fx.Lifecycle, cfg *config.Config, logger *zap.Logger) (*postgres.Pool, error) {
@@ -156,7 +162,7 @@ func NewWithdrawalProcessor(
 		infraServices.WithProcessorID(cfg.Processor.ID),
 		infraServices.WithBatchSize(cfg.Processor.BatchSize),
 		infraServices.WithPollInterval(cfg.Processor.PollInterval),
-		infraServices.WithLockTTL(cfg.Processor.LockTTL),
+		infraServices.WithLockTTL(int64(cfg.Processor.LockTTL.Seconds())),
 		infraServices.WithMaxConcurrent(cfg.Processor.MaxConcurrent),
 		infraServices.WithRetryBaseDelay(cfg.Processor.RetryBaseDelay),
 		infraServices.WithRetryMaxDelay(cfg.Processor.RetryMaxDelay),

@@ -208,7 +208,10 @@ func TestLoadFromEnv(t *testing.T) {
 	os.Setenv("POSTGRES_PASSWORD", "env-password")
 	os.Setenv("KAFKA_BROKERS", "env-broker:9092")
 
-	cfg := LoadFromEnv()
+	cfg, err := LoadFromEnv()
+	if err != nil {
+		t.Fatalf("LoadFromEnv() error = %v", err)
+	}
 
 	if cfg.Postgres.Password != "env-password" {
 		t.Errorf("Postgres.Password = %v, want 'env-password'", cfg.Postgres.Password)

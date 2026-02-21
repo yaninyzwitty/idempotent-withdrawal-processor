@@ -2,7 +2,10 @@ package config
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -45,7 +48,7 @@ type ProcessorConfig struct {
 	ID             string        `yaml:"id"`
 	BatchSize      int           `yaml:"batch_size"`
 	PollInterval   time.Duration `yaml:"poll_interval"`
-	LockTTL        int64         `yaml:"lock_ttl"`
+	LockTTL        time.Duration `yaml:"lock_ttl"`
 	MaxConcurrent  int           `yaml:"max_concurrent"`
 	RetryBaseDelay time.Duration `yaml:"retry_base_delay"`
 	RetryMaxDelay  time.Duration `yaml:"retry_max_delay"`
@@ -106,21 +109,58 @@ func Load(configPath string) (*Config, error) {
 		}
 	}
 
-	loadSecretsFromEnv(cfg)
+	if err := loadSecretsFromEnv(cfg); err != nil {
+		return nil, fmt.Errorf("failed to load secrets from environment: %w", err)
+	}
+
+	if err := Validate(cfg); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
 
 	return cfg, nil
 }
 
-func loadSecretsFromEnv(cfg *Config) {
-	if url := os.Getenv("POSTGRES_URL"); url != "" {
-		cfg.Postgres.URL = url
+// cleanly load secrets from environment variables, allowing overrides of config file values
+func loadSecretsFromEnv(cfg *Config) error {
+	if urlStr := os.Getenv("POSTGRES_URL"); urlStr != "" {
+		parsed, err := url.Parse(urlStr)
+		if err != nil {
+			return fmt.Errorf("invalid POSTGRES_URL: %w", err)
+		}
+		if parsed.Scheme == "" || parsed.Host == "" {
+			return fmt.Errorf("POSTGRES_URL missing scheme or host")
+		}
+		cfg.Postgres.URL = urlStr
 	}
+
 	if password := os.Getenv("POSTGRES_PASSWORD"); password != "" {
 		cfg.Postgres.Password = password
 	}
+
 	if brokers := os.Getenv("KAFKA_BROKERS"); brokers != "" {
-		cfg.Kafka.Brokers = splitBrokers(brokers)
+		parts := splitBrokers(brokers)
+		if len(parts) == 0 {
+			return fmt.Errorf("KAFKA_BROKERS is empty")
+		}
+
+		for i, broker := range parts {
+			broker = strings.TrimSpace(broker)
+
+			host, port, err := net.SplitHostPort(broker)
+			if err != nil {
+				return fmt.Errorf("invalid kafka broker: %s", broker)
+			}
+			if host == "" || port == "" {
+				return fmt.Errorf("invalid kafka broker: %s", broker)
+			}
+
+			parts[i] = broker
+		}
+
+		cfg.Kafka.Brokers = parts
 	}
+
+	return nil
 }
 
 func splitBrokers(brokers string) []string {
@@ -171,7 +211,7 @@ func DefaultConfig() *Config {
 			ID:             "processor-1",
 			BatchSize:      100,
 			PollInterval:   100 * time.Millisecond,
-			LockTTL:        300,
+			LockTTL:        300 * time.Second,
 			MaxConcurrent:  10,
 			RetryBaseDelay: 1 * time.Second,
 			RetryMaxDelay:  30 * time.Second,
@@ -195,12 +235,9 @@ func DefaultConfig() *Config {
 	}
 }
 
-func LoadFromEnv() *Config {
-	cfg, err := Load("")
-	if err != nil {
-		return DefaultConfig()
-	}
-	return cfg
+func LoadFromEnv() (*Config, error) {
+	return Load("")
+
 }
 
 func Validate(c *Config) error {
@@ -219,6 +256,23 @@ func Validate(c *Config) error {
 	if c.Processor.MaxConcurrent <= 0 {
 		return fmt.Errorf("processor max concurrent must be positive")
 	}
+	if c.Kafka.MaxBytes < c.Kafka.MinBytes {
+		return fmt.Errorf("kafka max_bytes must be >= min_bytes")
+	}
+	if c.Kafka.MaxWait <= 0 {
+		return fmt.Errorf("kafka max_wait must be positive")
+	}
+	if c.Processor.PollInterval <= 0 {
+		return fmt.Errorf("processor poll_interval must be positive")
+	}
+	if c.Processor.RetryMaxDelay < c.Processor.RetryBaseDelay {
+		return fmt.Errorf("retry_max_delay must be >= retry_base_delay")
+	}
+	if c.Postgres.URL == "" {
+		if c.Postgres.Host == "" || c.Postgres.User == "" || c.Postgres.Database == "" {
+			return fmt.Errorf("postgres host/user/database required when POSTGRES_URL not set")
+		}
+	}
 	return nil
 }
 
@@ -235,16 +289,4 @@ func GetConfigPath() string {
 		return path
 	}
 	return "config.yaml"
-}
-
-func MustLoad() *Config {
-	configPath := GetConfigPath()
-
-	cfg, err := Load(configPath)
-	if err != nil {
-		cfg = DefaultConfig()
-		loadSecretsFromEnv(cfg)
-	}
-
-	return cfg
 }
