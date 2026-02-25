@@ -100,6 +100,7 @@ type withdrawalProcessor struct {
 	running        atomic.Bool
 	stopCh         chan struct{}
 	wg             sync.WaitGroup
+	cancel         context.CancelFunc
 }
 
 func NewWithdrawalProcessor(
@@ -253,8 +254,11 @@ func (p *withdrawalProcessor) Start(ctx context.Context) error {
 		zap.String("processor_id", p.config.ProcessorID),
 	)
 
+	runCtx, cancel := context.WithCancel(context.Background())
+	p.cancel = cancel
+
 	p.wg.Add(1)
-	go p.run(ctx)
+	go p.run(runCtx)
 
 	return nil
 }
@@ -306,6 +310,9 @@ func (p *withdrawalProcessor) Stop(ctx context.Context) error {
 		return fmt.Errorf("processor not running")
 	}
 
+	if p.cancel != nil {
+		p.cancel()
+	}
 	close(p.stopCh)
 	p.wg.Wait()
 

@@ -269,6 +269,7 @@ func TestConsumerConfig_Options(t *testing.T) {
 	kafka.WithMaxBytes(1000000)(config)
 	kafka.WithMaxWait(500 * time.Millisecond)(config)
 	kafka.WithStartOffset(0)(config)
+	kafka.WithSASL("testuser", "testpass", "PLAIN")(config)
 
 	if len(config.Brokers) != 2 {
 		t.Errorf("brokers count = %v, want 2", len(config.Brokers))
@@ -291,6 +292,15 @@ func TestConsumerConfig_Options(t *testing.T) {
 	if config.StartOffset != 0 {
 		t.Errorf("start offset = %v, want 0", config.StartOffset)
 	}
+	if config.Username != "testuser" {
+		t.Errorf("username = %v, want 'testuser'", config.Username)
+	}
+	if config.Password != "testpass" {
+		t.Errorf("password = %v, want 'testpass'", config.Password)
+	}
+	if config.SASLMechanism != "PLAIN" {
+		t.Errorf("sasl mechanism = %v, want 'PLAIN'", config.SASLMechanism)
+	}
 }
 
 func TestProducerConfig_Options(t *testing.T) {
@@ -301,6 +311,7 @@ func TestProducerConfig_Options(t *testing.T) {
 	kafka.WithBatchSize(50)(config)
 	kafka.WithBatchTimeout(200 * time.Millisecond)(config)
 	kafka.WithAsync(true)(config)
+	kafka.WithProducerSASL("testuser", "testpass", "PLAIN")(config)
 
 	if len(config.Brokers) != 1 || config.Brokers[0] != "broker1:9092" {
 		t.Errorf("brokers = %v, want [broker1:9092]", config.Brokers)
@@ -316,5 +327,78 @@ func TestProducerConfig_Options(t *testing.T) {
 	}
 	if config.Async != true {
 		t.Error("async should be true")
+	}
+	if config.Username != "testuser" {
+		t.Errorf("username = %v, want 'testuser'", config.Username)
+	}
+	if config.Password != "testpass" {
+		t.Errorf("password = %v, want 'testpass'", config.Password)
+	}
+	if config.SASLMechanism != "PLAIN" {
+		t.Errorf("sasl mechanism = %v, want 'PLAIN'", config.SASLMechanism)
+	}
+}
+
+func TestSASLOptions(t *testing.T) {
+	tests := []struct {
+		name      string
+		username  string
+		password  string
+		mechanism string
+	}{
+		{
+			name:      "PLAIN mechanism",
+			username:  "user",
+			password:  "pass",
+			mechanism: "PLAIN",
+		},
+		{
+			name:      "empty mechanism defaults to PLAIN",
+			username:  "user",
+			password:  "pass",
+			mechanism: "",
+		},
+		{
+			name:      "SCRAM-SHA-256 mechanism",
+			username:  "user",
+			password:  "pass",
+			mechanism: "SCRAM-SHA-256",
+		},
+		{
+			name:      "SCRAM-SHA-512 mechanism",
+			username:  "user",
+			password:  "pass",
+			mechanism: "SCRAM-SHA-512",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			consumerConfig := kafka.DefaultConsumerConfig()
+			kafka.WithSASL(tt.username, tt.password, tt.mechanism)(consumerConfig)
+
+			if consumerConfig.Username != tt.username {
+				t.Errorf("consumer username = %v, want %v", consumerConfig.Username, tt.username)
+			}
+			if consumerConfig.Password != tt.password {
+				t.Errorf("consumer password = %v, want %v", consumerConfig.Password, tt.password)
+			}
+			if consumerConfig.SASLMechanism != tt.mechanism {
+				t.Errorf("consumer mechanism = %v, want %v", consumerConfig.SASLMechanism, tt.mechanism)
+			}
+
+			producerConfig := kafka.DefaultProducerConfig()
+			kafka.WithProducerSASL(tt.username, tt.password, tt.mechanism)(producerConfig)
+
+			if producerConfig.Username != tt.username {
+				t.Errorf("producer username = %v, want %v", producerConfig.Username, tt.username)
+			}
+			if producerConfig.Password != tt.password {
+				t.Errorf("producer password = %v, want %v", producerConfig.Password, tt.password)
+			}
+			if producerConfig.SASLMechanism != tt.mechanism {
+				t.Errorf("producer mechanism = %v, want %v", producerConfig.SASLMechanism, tt.mechanism)
+			}
+		})
 	}
 }

@@ -12,6 +12,7 @@ type WithdrawalRepository interface {
 	GetByIdempotencyKey(ctx context.Context, key string) (*entities.Withdrawal, error)
 	Update(ctx context.Context, withdrawal *entities.Withdrawal) error
 	UpdateWithVersion(ctx context.Context, withdrawal *entities.Withdrawal, expectedVersion int64) error
+	Delete(ctx context.Context, id string) error
 	ListByUserID(ctx context.Context, userID string, limit, offset int) ([]*entities.Withdrawal, error)
 	ListByStatus(ctx context.Context, status entities.WithdrawalStatus, limit int) ([]*entities.Withdrawal, error)
 	GetPendingWithdrawals(ctx context.Context, limit int) ([]*entities.Withdrawal, error)

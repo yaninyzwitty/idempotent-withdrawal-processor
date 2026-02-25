@@ -13,6 +13,7 @@ type MockWithdrawalRepository struct {
 	GetByIdempotencyKeyFunc   func(ctx context.Context, key string) (*entities.Withdrawal, error)
 	UpdateFunc                func(ctx context.Context, withdrawal *entities.Withdrawal) error
 	UpdateWithVersionFunc     func(ctx context.Context, withdrawal *entities.Withdrawal, expectedVersion int64) error
+	DeleteFunc                func(ctx context.Context, id string) error
 	ListByUserIDFunc          func(ctx context.Context, userID string, limit, offset int) ([]*entities.Withdrawal, error)
 	ListByStatusFunc          func(ctx context.Context, status entities.WithdrawalStatus, limit int) ([]*entities.Withdrawal, error)
 	GetPendingWithdrawalsFunc func(ctx context.Context, limit int) ([]*entities.Withdrawal, error)
@@ -72,6 +73,13 @@ func (m *MockWithdrawalRepository) GetPendingWithdrawals(ctx context.Context, li
 		return m.GetPendingWithdrawalsFunc(ctx, limit)
 	}
 	return []*entities.Withdrawal{}, nil
+}
+
+func (m *MockWithdrawalRepository) Delete(ctx context.Context, id string) error {
+	if m.DeleteFunc != nil {
+		return m.DeleteFunc(ctx, id)
+	}
+	return nil
 }
 
 var _ repositories.WithdrawalRepository = (*MockWithdrawalRepository)(nil)

@@ -182,6 +182,10 @@ func (r *PostgresWithdrawalRepository) GetPendingWithdrawals(ctx context.Context
 	return withdrawals, nil
 }
 
+func (r *PostgresWithdrawalRepository) Delete(ctx context.Context, id string) error {
+	return r.queries.DeleteWithdrawal(ctx, id)
+}
+
 func (r *PostgresWithdrawalRepository) scanWithdrawal(row db.Withdrawal) *entities.Withdrawal {
 	amount := new(big.Int)
 	amount.SetString(row.Amount, 10)

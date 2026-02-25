@@ -81,6 +81,15 @@ func (q *Queries) CreateWithdrawal(ctx context.Context, arg CreateWithdrawalPara
 	return i, err
 }
 
+const deleteWithdrawal = `-- name: DeleteWithdrawal :exec
+DELETE FROM withdrawals WHERE id = $1
+`
+
+func (q *Queries) DeleteWithdrawal(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, deleteWithdrawal, id)
+	return err
+}
+
 const getPendingWithdrawals = `-- name: GetPendingWithdrawals :many
 SELECT id, idempotency_key, user_id, asset, amount, destination_addr, network, status, retry_count, max_retries, error_message, tx_hash, created_at, updated_at, processed_at, processing_version FROM withdrawals WHERE status IN ('PENDING', 'RETRYING') ORDER BY created_at ASC LIMIT $1
 `

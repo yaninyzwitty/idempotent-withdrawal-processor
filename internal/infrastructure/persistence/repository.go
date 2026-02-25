@@ -221,6 +221,30 @@ func (r *InMemoryWithdrawalRepository) GetPendingWithdrawals(ctx context.Context
 	return append(pending, retrying...), nil
 }
 
+func (r *InMemoryWithdrawalRepository) Delete(ctx context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	withdrawal, exists := r.byID[id]
+	if !exists {
+		return entities.ErrWithdrawalNotFound
+	}
+
+	delete(r.byID, id)
+	delete(r.byIdempotencyKey, withdrawal.IdempotencyKey)
+	r.removeFromStatusSlice(withdrawal.Status, id)
+
+	ids := r.byUserID[withdrawal.UserID]
+	for i, existingID := range ids {
+		if existingID == id {
+			r.byUserID[withdrawal.UserID] = append(ids[:i], ids[i+1:]...)
+			break
+		}
+	}
+
+	return nil
+}
+
 func (r *InMemoryWithdrawalRepository) removeFromStatusSlice(status entities.WithdrawalStatus, id string) {
 	ids := r.byStatus[status]
 	for i, existingID := range ids {

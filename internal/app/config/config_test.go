@@ -82,7 +82,7 @@ processor:
   id: test-processor
   batch_size: 50
   poll_interval: 50ms
-  lock_ttl: 600
+  lock_ttl: 600s
   max_concurrent: 20
   retry_base_delay: 2s
   retry_max_delay: 60s
@@ -146,6 +146,9 @@ func TestLoadSecretsFromEnv(t *testing.T) {
 	originalPassword := os.Getenv("POSTGRES_PASSWORD")
 	originalBrokers := os.Getenv("KAFKA_BROKERS")
 	originalURL := os.Getenv("POSTGRES_URL")
+	originalKafkaUsername := os.Getenv("KAFKA_USERNAME")
+	originalKafkaPassword := os.Getenv("KAFKA_PASSWORD")
+	originalKafkaSASLMechanism := os.Getenv("KAFKA_SASL_MECHANISM")
 
 	defer func() {
 		if originalPassword == "" {
@@ -163,11 +166,29 @@ func TestLoadSecretsFromEnv(t *testing.T) {
 		} else {
 			os.Setenv("POSTGRES_URL", originalURL)
 		}
+		if originalKafkaUsername == "" {
+			os.Unsetenv("KAFKA_USERNAME")
+		} else {
+			os.Setenv("KAFKA_USERNAME", originalKafkaUsername)
+		}
+		if originalKafkaPassword == "" {
+			os.Unsetenv("KAFKA_PASSWORD")
+		} else {
+			os.Setenv("KAFKA_PASSWORD", originalKafkaPassword)
+		}
+		if originalKafkaSASLMechanism == "" {
+			os.Unsetenv("KAFKA_SASL_MECHANISM")
+		} else {
+			os.Setenv("KAFKA_SASL_MECHANISM", originalKafkaSASLMechanism)
+		}
 	}()
 
 	os.Setenv("POSTGRES_PASSWORD", "secret-password")
 	os.Setenv("KAFKA_BROKERS", "broker1:9092,broker2:9092")
 	os.Setenv("POSTGRES_URL", "postgres://user:pass@host:5432/db")
+	os.Setenv("KAFKA_USERNAME", "kafka-user")
+	os.Setenv("KAFKA_PASSWORD", "kafka-pass")
+	os.Setenv("KAFKA_SASL_MECHANISM", "PLAIN")
 
 	cfg, err := Load("")
 	if err != nil {
@@ -185,6 +206,15 @@ func TestLoadSecretsFromEnv(t *testing.T) {
 	}
 	if cfg.Postgres.URL != "postgres://user:pass@host:5432/db" {
 		t.Errorf("Postgres.URL = %v, want 'postgres://user:pass@host:5432/db'", cfg.Postgres.URL)
+	}
+	if cfg.Kafka.Username != "kafka-user" {
+		t.Errorf("Kafka.Username = %v, want 'kafka-user'", cfg.Kafka.Username)
+	}
+	if cfg.Kafka.Password != "kafka-pass" {
+		t.Errorf("Kafka.Password = %v, want 'kafka-pass'", cfg.Kafka.Password)
+	}
+	if cfg.Kafka.SASLMechanism != "PLAIN" {
+		t.Errorf("Kafka.SASLMechanism = %v, want 'PLAIN'", cfg.Kafka.SASLMechanism)
 	}
 }
 
@@ -261,63 +291,119 @@ func TestValidate(t *testing.T) {
 		{
 			name: "invalid grpc port - zero",
 			config: &Config{
-				GRPC:      GRPCConfig{Port: 0},
-				Kafka:     KafkaConfig{Brokers: []string{"localhost:9092"}, Topic: "test"},
-				Processor: ProcessorConfig{BatchSize: 10, MaxConcurrent: 5},
+				GRPC: GRPCConfig{Port: 0},
+				Kafka: KafkaConfig{
+					Brokers: []string{"localhost:9092"},
+					Topic:   "test",
+					MaxWait: 100 * time.Millisecond,
+				},
+				Processor: ProcessorConfig{
+					BatchSize:     10,
+					MaxConcurrent: 5,
+					PollInterval:  100 * time.Millisecond,
+				},
 			},
 			wantErr: true,
 		},
 		{
 			name: "invalid grpc port - negative",
 			config: &Config{
-				GRPC:      GRPCConfig{Port: -1},
-				Kafka:     KafkaConfig{Brokers: []string{"localhost:9092"}, Topic: "test"},
-				Processor: ProcessorConfig{BatchSize: 10, MaxConcurrent: 5},
+				GRPC: GRPCConfig{Port: -1},
+				Kafka: KafkaConfig{
+					Brokers: []string{"localhost:9092"},
+					Topic:   "test",
+					MaxWait: 100 * time.Millisecond,
+				},
+				Processor: ProcessorConfig{
+					BatchSize:     10,
+					MaxConcurrent: 5,
+					PollInterval:  100 * time.Millisecond,
+				},
 			},
 			wantErr: true,
 		},
 		{
 			name: "invalid grpc port - too high",
 			config: &Config{
-				GRPC:      GRPCConfig{Port: 70000},
-				Kafka:     KafkaConfig{Brokers: []string{"localhost:9092"}, Topic: "test"},
-				Processor: ProcessorConfig{BatchSize: 10, MaxConcurrent: 5},
+				GRPC: GRPCConfig{Port: 70000},
+				Kafka: KafkaConfig{
+					Brokers: []string{"localhost:9092"},
+					Topic:   "test",
+					MaxWait: 100 * time.Millisecond,
+				},
+				Processor: ProcessorConfig{
+					BatchSize:     10,
+					MaxConcurrent: 5,
+					PollInterval:  100 * time.Millisecond,
+				},
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing kafka brokers",
 			config: &Config{
-				GRPC:      GRPCConfig{Port: 50051},
-				Kafka:     KafkaConfig{Brokers: []string{}, Topic: "test"},
-				Processor: ProcessorConfig{BatchSize: 10, MaxConcurrent: 5},
+				GRPC: GRPCConfig{Port: 50051},
+				Kafka: KafkaConfig{
+					Brokers: []string{},
+					Topic:   "test",
+					MaxWait: 100 * time.Millisecond,
+				},
+				Processor: ProcessorConfig{
+					BatchSize:     10,
+					MaxConcurrent: 5,
+					PollInterval:  100 * time.Millisecond,
+				},
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing kafka topic",
 			config: &Config{
-				GRPC:      GRPCConfig{Port: 50051},
-				Kafka:     KafkaConfig{Brokers: []string{"localhost:9092"}, Topic: ""},
-				Processor: ProcessorConfig{BatchSize: 10, MaxConcurrent: 5},
+				GRPC: GRPCConfig{Port: 50051},
+				Kafka: KafkaConfig{
+					Brokers: []string{"localhost:9092"},
+					Topic:   "",
+					MaxWait: 100 * time.Millisecond,
+				},
+				Processor: ProcessorConfig{
+					BatchSize:     10,
+					MaxConcurrent: 5,
+					PollInterval:  100 * time.Millisecond,
+				},
 			},
 			wantErr: true,
 		},
 		{
 			name: "invalid processor batch size",
 			config: &Config{
-				GRPC:      GRPCConfig{Port: 50051},
-				Kafka:     KafkaConfig{Brokers: []string{"localhost:9092"}, Topic: "test"},
-				Processor: ProcessorConfig{BatchSize: 0, MaxConcurrent: 5},
+				GRPC: GRPCConfig{Port: 50051},
+				Kafka: KafkaConfig{
+					Brokers: []string{"localhost:9092"},
+					Topic:   "test",
+					MaxWait: 100 * time.Millisecond,
+				},
+				Processor: ProcessorConfig{
+					BatchSize:     0,
+					MaxConcurrent: 5,
+					PollInterval:  100 * time.Millisecond,
+				},
 			},
 			wantErr: true,
 		},
 		{
 			name: "invalid processor max concurrent",
 			config: &Config{
-				GRPC:      GRPCConfig{Port: 50051},
-				Kafka:     KafkaConfig{Brokers: []string{"localhost:9092"}, Topic: "test"},
-				Processor: ProcessorConfig{BatchSize: 10, MaxConcurrent: 0},
+				GRPC: GRPCConfig{Port: 50051},
+				Kafka: KafkaConfig{
+					Brokers: []string{"localhost:9092"},
+					Topic:   "test",
+					MaxWait: 100 * time.Millisecond,
+				},
+				Processor: ProcessorConfig{
+					BatchSize:     10,
+					MaxConcurrent: 0,
+					PollInterval:  100 * time.Millisecond,
+				},
 			},
 			wantErr: true,
 		},

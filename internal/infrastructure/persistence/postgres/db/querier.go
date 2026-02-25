@@ -15,6 +15,7 @@ type Querier interface {
 	DeleteExpiredIdempotencyKeys(ctx context.Context) error
 	DeleteExpiredProcessingLocks(ctx context.Context) error
 	DeleteIdempotencyKey(ctx context.Context, key string) error
+	DeleteWithdrawal(ctx context.Context, id string) error
 	ExistsIdempotencyKey(ctx context.Context, key string) (bool, error)
 	ExtendProcessingLock(ctx context.Context, arg ExtendProcessingLockParams) (ProcessingLock, error)
 	GetIdempotencyKey(ctx context.Context, key string) (IdempotencyKey, error)

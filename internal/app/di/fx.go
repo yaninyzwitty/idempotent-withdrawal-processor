@@ -178,6 +178,7 @@ func NewKafkaConsumer(cfg *config.Config) (*kafka.Consumer, error) {
 		kafka.WithMinBytes(cfg.Kafka.MinBytes),
 		kafka.WithMaxBytes(cfg.Kafka.MaxBytes),
 		kafka.WithMaxWait(cfg.Kafka.MaxWait),
+		kafka.WithSASL(cfg.Kafka.Username, cfg.Kafka.Password, cfg.Kafka.SASLMechanism),
 	)
 }
 
@@ -185,6 +186,7 @@ func NewKafkaProducer(cfg *config.Config) (*kafka.Producer, error) {
 	return kafka.NewProducer(
 		kafka.WithProducerBrokers(cfg.Kafka.Brokers),
 		kafka.WithProducerTopic(cfg.Kafka.Topic),
+		kafka.WithProducerSASL(cfg.Kafka.Username, cfg.Kafka.Password, cfg.Kafka.SASLMechanism),
 	)
 }
 

@@ -63,9 +63,14 @@ func (s *withdrawalService) CreateWithdrawal(ctx context.Context, req *domain.Cr
 		return withdrawal, true, nil
 	}
 
+	s.logger.Debug("parsing amount", zap.String("amount", req.Amount), zap.Int("len", len(req.Amount)))
 	amount, ok := new(big.Int).SetString(req.Amount, 10)
 	if !ok {
-		return nil, false, entities.ErrInvalidAmount
+		s.logger.Error("failed to parse amount",
+			zap.String("amount", req.Amount),
+			zap.Int("len", len(req.Amount)),
+		)
+		return nil, false, fmt.Errorf("%w: got %q", entities.ErrInvalidAmount, req.Amount)
 	}
 
 	id := persistence.GenerateID()
@@ -84,21 +89,22 @@ func (s *withdrawalService) CreateWithdrawal(ctx context.Context, req *domain.Cr
 		return nil, false, fmt.Errorf("failed to create withdrawal entity: %w", err)
 	}
 
+	if err := s.withdrawalRepo.Create(ctx, withdrawal); err != nil {
+		return nil, false, fmt.Errorf("failed to create withdrawal: %w", err)
+	}
+
 	acquired, err := s.idempotencyRepo.Acquire(ctx, req.IdempotencyKey, id, 86400)
 	if err != nil {
+		_ = s.withdrawalRepo.Delete(ctx, id)
 		return nil, false, fmt.Errorf("failed to acquire idempotency key: %w", err)
 	}
 	if !acquired {
+		_ = s.withdrawalRepo.Delete(ctx, id)
 		withdrawal, err := s.withdrawalRepo.GetByIdempotencyKey(ctx, req.IdempotencyKey)
 		if err != nil {
 			return nil, false, fmt.Errorf("failed to get existing withdrawal after acquire failed: %w", err)
 		}
 		return withdrawal, true, nil
-	}
-
-	if err := s.withdrawalRepo.Create(ctx, withdrawal); err != nil {
-		_ = s.idempotencyRepo.Release(ctx, req.IdempotencyKey)
-		return nil, false, fmt.Errorf("failed to create withdrawal: %w", err)
 	}
 
 	s.logger.Info("created new withdrawal",

@@ -97,8 +97,11 @@ func NewWithdrawal(
 	if idempotencyKey == "" {
 		return nil, ErrInvalidIdempotencyKey
 	}
-	if amount == nil || amount.Sign() <= 0 {
-		return nil, ErrInvalidAmount
+	if amount == nil {
+		return nil, fmt.Errorf("%w: amount is nil", ErrInvalidAmount)
+	}
+	if amount.Sign() <= 0 {
+		return nil, fmt.Errorf("%w: amount must be positive, got %s", ErrInvalidAmount, amount.String())
 	}
 	if destinationAddr == "" {
 		return nil, ErrInvalidAddress

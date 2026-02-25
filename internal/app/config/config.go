@@ -38,6 +38,9 @@ type GRPCConfig struct {
 type KafkaConfig struct {
 	Brokers       []string      `yaml:"-"`
 	Topic         string        `yaml:"topic"`
+	Username      string        `yaml:"-"`
+	Password      string        `yaml:"-"`
+	SASLMechanism string        `yaml:"-"`
 	ConsumerGroup string        `yaml:"consumer_group"`
 	MinBytes      int           `yaml:"min_bytes"`
 	MaxBytes      int           `yaml:"max_bytes"`
@@ -92,6 +95,14 @@ func WithProcessorID(id string) ConfigOption {
 func WithLogLevel(level string) ConfigOption {
 	return func(c *Config) {
 		c.Logging.Level = level
+	}
+}
+
+func WithKafkaCredentials(username, password string, mechanism string) ConfigOption {
+	return func(c *Config) {
+		c.Kafka.Username = username
+		c.Kafka.Password = password
+		c.Kafka.SASLMechanism = mechanism
 	}
 }
 
@@ -160,6 +171,18 @@ func loadSecretsFromEnv(cfg *Config) error {
 		cfg.Kafka.Brokers = parts
 	}
 
+	if username := os.Getenv("KAFKA_USERNAME"); username != "" {
+		cfg.Kafka.Username = username
+	}
+
+	if password := os.Getenv("KAFKA_PASSWORD"); password != "" {
+		cfg.Kafka.Password = password
+	}
+
+	if mechanism := os.Getenv("KAFKA_SASL_MECHANISM"); mechanism != "" {
+		cfg.Kafka.SASLMechanism = mechanism
+	}
+
 	return nil
 }
 
@@ -206,6 +229,8 @@ func DefaultConfig() *Config {
 			MinBytes:      1,
 			MaxBytes:      10e6,
 			MaxWait:       100 * time.Millisecond,
+			Username:      "",
+			Password:      "",
 		},
 		Processor: ProcessorConfig{
 			ID:             "processor-1",

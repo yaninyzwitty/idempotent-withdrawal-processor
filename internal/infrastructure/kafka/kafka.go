@@ -7,18 +7,24 @@ import (
 	"time"
 
 	"github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go/sasl"
+	"github.com/segmentio/kafka-go/sasl/plain"
+	"github.com/segmentio/kafka-go/sasl/scram"
 	"github.com/yaninyzwitty/idempotent-widthrawal-processor/internal/domain/entities"
 	"go.uber.org/zap"
 )
 
 type ConsumerConfig struct {
-	Brokers     []string
-	Topic       string
-	GroupID     string
-	MinBytes    int
-	MaxBytes    int
-	MaxWait     time.Duration
-	StartOffset int64
+	Brokers       []string
+	Topic         string
+	GroupID       string
+	MinBytes      int
+	MaxBytes      int
+	MaxWait       time.Duration
+	StartOffset   int64
+	Username      string
+	Password      string
+	SASLMechanism string
 }
 
 type ConsumerOption func(*ConsumerConfig)
@@ -65,6 +71,14 @@ func WithStartOffset(offset int64) ConsumerOption {
 	}
 }
 
+func WithSASL(username, password, mechanism string) ConsumerOption {
+	return func(c *ConsumerConfig) {
+		c.Username = username
+		c.Password = password
+		c.SASLMechanism = mechanism
+	}
+}
+
 func DefaultConsumerConfig() *ConsumerConfig {
 	return &ConsumerConfig{
 		Brokers:     []string{"localhost:9092"},
@@ -97,6 +111,34 @@ type Consumer struct {
 
 type MessageHandler func(ctx context.Context, msg *WithdrawalMessage) error
 
+func newSASLMechanism(username, password, mechanism string) (sasl.Mechanism, error) {
+	if username == "" || password == "" {
+		return nil, nil
+	}
+
+	switch mechanism {
+	case "PLAIN", "":
+		return plain.Mechanism{
+			Username: username,
+			Password: password,
+		}, nil
+	case "SCRAM-SHA-256":
+		m, err := scram.Mechanism(scram.SHA256, username, password)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create SCRAM-SHA-256 mechanism: %w", err)
+		}
+		return m, nil
+	case "SCRAM-SHA-512":
+		m, err := scram.Mechanism(scram.SHA512, username, password)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create SCRAM-SHA-512 mechanism: %w", err)
+		}
+		return m, nil
+	default:
+		return nil, fmt.Errorf("unsupported SASL mechanism: %s", mechanism)
+	}
+}
+
 func NewConsumer(opts ...ConsumerOption) (*Consumer, error) {
 	config := DefaultConsumerConfig()
 	for _, opt := range opts {
@@ -110,7 +152,7 @@ func NewConsumer(opts ...ConsumerOption) (*Consumer, error) {
 		return nil, fmt.Errorf("topic is required")
 	}
 
-	reader := kafka.NewReader(kafka.ReaderConfig{
+	readerConfig := kafka.ReaderConfig{
 		Brokers:     config.Brokers,
 		Topic:       config.Topic,
 		GroupID:     config.GroupID,
@@ -118,7 +160,21 @@ func NewConsumer(opts ...ConsumerOption) (*Consumer, error) {
 		MaxBytes:    config.MaxBytes,
 		MaxWait:     config.MaxWait,
 		StartOffset: config.StartOffset,
-	})
+	}
+
+	if config.Username != "" && config.Password != "" {
+		mechanism, err := newSASLMechanism(config.Username, config.Password, config.SASLMechanism)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create SASL mechanism: %w", err)
+		}
+		if mechanism != nil {
+			readerConfig.Dialer = &kafka.Dialer{
+				SASLMechanism: mechanism,
+			}
+		}
+	}
+
+	reader := kafka.NewReader(readerConfig)
 
 	return &Consumer{
 		reader: reader,
@@ -191,11 +247,14 @@ func (c *Consumer) Close() error {
 }
 
 type ProducerConfig struct {
-	Brokers      []string
-	Topic        string
-	BatchSize    int
-	BatchTimeout time.Duration
-	Async        bool
+	Brokers       []string
+	Topic         string
+	BatchSize     int
+	BatchTimeout  time.Duration
+	Async         bool
+	Username      string
+	Password      string
+	SASLMechanism string
 }
 
 type ProducerOption func(*ProducerConfig)
@@ -227,6 +286,14 @@ func WithBatchTimeout(timeout time.Duration) ProducerOption {
 func WithAsync(async bool) ProducerOption {
 	return func(p *ProducerConfig) {
 		p.Async = async
+	}
+}
+
+func WithProducerSASL(username, password, mechanism string) ProducerOption {
+	return func(p *ProducerConfig) {
+		p.Username = username
+		p.Password = password
+		p.SASLMechanism = mechanism
 	}
 }
 
@@ -266,6 +333,18 @@ func NewProducer(opts ...ProducerOption) (*Producer, error) {
 		BatchSize:    config.BatchSize,
 		BatchTimeout: config.BatchTimeout,
 		Async:        config.Async,
+	}
+
+	if config.Username != "" && config.Password != "" {
+		mechanism, err := newSASLMechanism(config.Username, config.Password, config.SASLMechanism)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create SASL mechanism: %w", err)
+		}
+		if mechanism != nil {
+			writer.Transport = &kafka.Transport{
+				SASL: mechanism,
+			}
+		}
 	}
 
 	return &Producer{

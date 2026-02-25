@@ -45,3 +45,6 @@ SELECT * FROM withdrawals WHERE status = $1 ORDER BY created_at ASC LIMIT $2;
 
 -- name: GetPendingWithdrawals :many
 SELECT * FROM withdrawals WHERE status IN ('PENDING', 'RETRYING') ORDER BY created_at ASC LIMIT $1;
+
+-- name: DeleteWithdrawal :exec
+DELETE FROM withdrawals WHERE id = $1;
